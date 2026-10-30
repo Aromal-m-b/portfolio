@@ -282,3 +282,6 @@ footer a { color: rgb(145,145,145); text-underline-offset: 4px; }
  #MainDiv { scrollbar-width: none; }
  #MainDiv::-webkit-scrollbar { display: none; }
 }
+
+strong { font-weight: inherit; }
+.TerminalError { position: fixed; bottom: 12px; left: 16px; max-width: 70vw; font-size: 12px; }

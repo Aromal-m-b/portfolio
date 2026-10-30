@@ -1,3 +1,9 @@
+// Adapted from LuckeyDuckey's MIT-licensed WebGL portfolio; see LICENSE.
+export function createRetroTerminal(Canvas, audio) {
+ const { ComputerBoot, ComputerAmbient, ComputerBeep, KeyboardPressed } = audio;
+ const listeners = new AbortController();
+ const listen = (target, type, callback) => target.addEventListener(type, callback, { signal: listeners.signal });
+ let State = 'Modern', frame = 0, booted = false;
 
 const ObjectFile = `# Blender 4.0.2
 # www.blender.org
@@ -11829,3 +11835,1595 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.450000
 d 1.000000
 illum 2`;
+
+
+// Set the canvas size to match the display size
+function ResizeCanvasToDisplaySize(Canvas)
+{
+    const DisplayWidth = window.innerWidth;
+    const DisplayHeight = window.innerHeight;
+
+    if (Canvas.width !== DisplayWidth || Canvas.height !== DisplayHeight)
+    {
+        Canvas.width = DisplayWidth;
+        Canvas.height = DisplayHeight;
+
+        WebGL.viewport(0, 0, DisplayWidth, DisplayHeight);
+    }
+}
+
+// Function to create a shader
+function LoadShader(WebGL, Type, Source)
+{
+    const Shader = WebGL.createShader(Type);
+
+    WebGL.shaderSource(Shader, Source);
+    WebGL.compileShader(Shader);
+
+    if (WebGL.getShaderParameter(Shader, WebGL.COMPILE_STATUS))
+    {
+        return Shader;
+    }
+
+    alert("An error occurred compiling the shaders: " + WebGL.getShaderInfoLog(Shader));
+    WebGL.deleteShader(Shader);
+}
+
+function LoadMaterials(MaterialFile)
+{
+    // Define materials dicionary and current material
+    const Materials = {};
+    let CurrentMaterial = null;
+
+    // Split the input text into individual lines
+    const Lines = MaterialFile.split("\n");
+
+    // Iterate over each line
+    for (const Line of Lines)
+    {
+        // Trim whitespace from the start and end of the line
+        const LineTrimmed = Line.trim();
+
+        // Split the line at every space
+        const Parts = LineTrimmed.split(/\s+/);
+
+        // If line is a new material
+        if (LineTrimmed.startsWith("newmtl "))
+        {
+            CurrentMaterial = Parts[1];
+            Materials[CurrentMaterial] = {};
+        }
+
+        // If line is a material color
+        else if (LineTrimmed.startsWith("Kd ") && CurrentMaterial)
+        {
+            Materials[CurrentMaterial].Color = Parts.slice(1, 4).map(parseFloat);
+        }
+    }
+
+    return Materials;
+}
+
+function GenerateVertexArray(Vertices, TextureCoords, FlatNormals, SmoothNormals, Materials, Faces)
+{
+    const VertexArray = [];
+    const TextureCoordArray = [];
+    const NormalArray = [];
+    const ColorArray = [];
+    
+    for (const Face of Faces)
+    {
+        const [VerticesIndices, TextureCoordIndices, NormalIndices, MaterialIndice] = Face;
+        
+        // Check the number of vertices in the face
+        const NumVertices = VerticesIndices.length;
+
+        if (NumVertices < 3)
+        {
+            continue; // Skip faces with less than 3 vertices
+        }
+
+        // Get face color and default to white if no material found
+        const FaceColor = Materials[MaterialIndice]?.Color || [1, 1, 1];
+        
+        // Triangulate the face using the first vertex as a reference
+        for (let i = 1; i < NumVertices - 1; i++) // COULD BE BROKEN REPLACE i=0 WITH i=1 VISEVERSA
+        {
+            // Must perform for all 3 points of triangle
+            for (let Index of [0, i, i + 1])
+            {
+                VertexArray.push(...Vertices[VerticesIndices[Index]]);
+                TextureCoordArray.push(...TextureCoords[TextureCoordIndices[Index]]);
+                ColorArray.push(...FaceColor);
+
+                // If face color is red then its part of the screen so sample smooth normlas
+                if (FaceColor[0] > 0.9 && FaceColor[1] < 0.1) {NormalArray.push(...SmoothNormals[VerticesIndices[Index]]);}
+                else {NormalArray.push(...FlatNormals[NormalIndices[Index]]);}
+            }
+        }
+    }
+
+    return [VertexArray, TextureCoordArray, NormalArray, ColorArray]
+}
+
+function CalculateVertexNormals(Vertices, Faces)
+{
+    // Initialize arrays to store accumulated normals and count for each vertex
+    const VertexNormals = [];
+    const VertexCounts = [];
+
+    for (let i = 0; i < Vertices.length; i++)
+    {
+        VertexNormals.push([0, 0, 0]);
+        VertexCounts.push(0);
+    }
+
+    // Iterate through each face
+    for (const Face of Faces)
+    {
+        const VerticesIndices = Face[0];
+
+        // Skip faces with less than 3 vertices
+        if (VerticesIndices.length < 3)
+        {
+            continue;
+        }
+
+        // Get the vertices of the face
+        const VertexA = Vertices[VerticesIndices[0]];
+        const VertexB = Vertices[VerticesIndices[1]];
+        const VertexC = Vertices[VerticesIndices[2]];
+
+        // Calculate two edges of the face
+        const EdgeA = [VertexB[0] - VertexA[0], VertexB[1] - VertexA[1], VertexB[2] - VertexA[2]];
+        const EdgeB = [VertexC[0] - VertexA[0], VertexC[1] - VertexA[1], VertexC[2] - VertexA[2]];
+
+        // Calculate the face normal using cross product of the two edges
+        const Normal = [
+            EdgeA[1] * EdgeB[2] - EdgeA[2] * EdgeB[1],  // x component
+            EdgeA[2] * EdgeB[0] - EdgeA[0] * EdgeB[2],  // y component
+            EdgeA[0] * EdgeB[1] - EdgeA[1] * EdgeB[0]   // z component
+        ];
+
+        // Add the face normal to all vertices of this face
+        for (const Index of VerticesIndices)
+        {
+            // Accumulate the normal
+            VertexNormals[Index][0] += Normal[0];
+            VertexNormals[Index][1] += Normal[1];
+            VertexNormals[Index][2] += Normal[2];
+
+            // Increment the count for this vertex
+            VertexCounts[Index]++;
+        }
+    }
+
+    // Normalize the accumulated normals
+    for (let i = 0; i < VertexNormals.length; i++)
+    {
+        // Only normalize if the vertex was used in at least one face
+        if (VertexCounts[i] > 0)
+        {
+            VertexNormals[i] = Normalize(VertexNormals[i]);
+        }
+    }
+
+    return VertexNormals;
+}
+
+function LoadObject(ObjectFile, MaterialFile)
+{
+    const Vertices = [];
+    const TextureCoords = [];
+    const FlatNormals = [];
+    const Faces = [];
+
+    // Define materials
+    const Materials = LoadMaterials(MaterialFile);
+    let CurrentMaterial = null;
+
+    // Split the input text into individual lines
+    const Lines = ObjectFile.split("\n");
+  
+    // Iterate over each line
+    for (const Line of Lines)
+    {
+        // Trim whitespace from the start and end of the line
+        const LineTrimmed = Line.trim();
+
+        // Split the line at every space
+        const Parts = LineTrimmed.split(/\s+/);
+
+        // If line is a vertex position
+        if (LineTrimmed.startsWith("v "))
+        {
+            // Get array excluding the first element ("v")
+            const VertexData = Parts.slice(1);
+
+            // Convert each substring to a floating-point number
+            const FloatData = VertexData.map(parseFloat);
+
+            // Store vertex position
+            Vertices.push(FloatData);
+        }
+
+        // If line is a texture coord
+        else if (LineTrimmed.startsWith("vt "))
+        {
+            // Get array excluding the first element ("vt")
+            const TextureData = Parts.slice(1);
+            
+            // Convert each substring to a floating-point number
+            const FloatData = TextureData.map(parseFloat);
+            
+            // Store texture coord
+            TextureCoords.push(FloatData);
+        }
+
+        // If line is a normal position
+        else if (LineTrimmed.startsWith("vn "))
+        {
+            // Get array excluding the first element ("vn")
+            const NormalData = Parts.slice(1);
+    
+            // Convert each substring to a floating-point number
+            const FloatData = NormalData.map(parseFloat);
+    
+            // Store normal vector
+            FlatNormals.push(FloatData);
+        }
+
+        // If line sets material
+        else if (LineTrimmed.startsWith("usemtl "))
+        {
+            // Set the current material to most recently seen one
+            CurrentMaterial = Parts[1];
+        }
+
+        // If line defines a face
+        else if (LineTrimmed.startsWith("f "))
+        {
+            // Split line at every space and exclude first element
+            const Face = Parts.slice(1);
+            
+            // Each face have vertex position indices
+            const FaceVertices = [];
+            const FaceTextureCoord = [];
+            const FaceNormals = [];
+
+            for (const Vertex of Face)
+            {
+                // Get indexs of vertex, normal, and texcood
+                const Indices = Vertex.split("/");
+
+                // Extract vertex index minus one for array indexing
+                FaceVertices.push(parseInt(Indices[0]) - 1);
+
+                // Extract TextureCoord index minus one for array indexing
+                FaceTextureCoord.push(parseInt(Indices[1]) - 1);
+
+                // Extract normal index minus one for array indexing
+                FaceNormals.push(parseInt(Indices[2]) - 1);
+            }
+
+            // Store vertex indexes
+            Faces.push([FaceVertices, FaceTextureCoord, FaceNormals, CurrentMaterial]);
+        }
+
+        // If line type is unrecognized
+        else
+        {
+            continue;
+        }
+    }
+
+    const SmoothNormals = CalculateVertexNormals(Vertices, Faces);
+
+    return GenerateVertexArray(Vertices, TextureCoords, FlatNormals, SmoothNormals, Materials, Faces);
+}
+
+function GenerateShadowMap(ShadowMapWidth, ShadowMapHeight, LightSpaceMatrix)
+{
+    // Create a framebuffer object for shadow mapping
+    const ShadowFramebuffer = WebGL.createFramebuffer();
+    WebGL.bindFramebuffer(WebGL.FRAMEBUFFER, ShadowFramebuffer);
+
+    // Create a depth texture for the shadow map
+    const ShadowDepthTexture = WebGL.createTexture();
+    WebGL.bindTexture(WebGL.TEXTURE_2D, ShadowDepthTexture);
+    WebGL.texImage2D(WebGL.TEXTURE_2D, 0, WebGL.DEPTH_COMPONENT24, ShadowMapWidth, ShadowMapHeight, 0, WebGL.DEPTH_COMPONENT, WebGL.UNSIGNED_INT, null);
+    WebGL.texParameteri(WebGL.TEXTURE_2D, WebGL.TEXTURE_MIN_FILTER, WebGL.NEAREST);
+    WebGL.texParameteri(WebGL.TEXTURE_2D, WebGL.TEXTURE_MAG_FILTER, WebGL.NEAREST);
+    WebGL.texParameteri(WebGL.TEXTURE_2D, WebGL.TEXTURE_WRAP_S, WebGL.CLAMP_TO_EDGE);
+    WebGL.texParameteri(WebGL.TEXTURE_2D, WebGL.TEXTURE_WRAP_T, WebGL.CLAMP_TO_EDGE);
+
+    WebGL.framebufferTexture2D(WebGL.FRAMEBUFFER, WebGL.DEPTH_ATTACHMENT, WebGL.TEXTURE_2D, ShadowDepthTexture, 0);
+
+    if (WebGL.checkFramebufferStatus(WebGL.FRAMEBUFFER) !== WebGL.FRAMEBUFFER_COMPLETE)
+    {
+        alert("Shadow framebuffer is not complete");
+    }
+
+    WebGL.bindFramebuffer(WebGL.FRAMEBUFFER, null);
+
+    // Vertex shader source code
+    const ShadowVertexSource = `#version 300 es
+    in vec4 VertexPosition;
+
+    uniform mat4 LightSpaceMatrix;
+
+    void main(void)
+    {
+        gl_Position = LightSpaceMatrix * VertexPosition;
+    }`;
+
+    // Fragment shader source code
+    const ShadowFragmentSource = `#version 300 es
+    precision highp float;
+
+    void main(void)
+    {
+        // gl_FragDepth is automatically written, no need to do anything here
+    }`;
+
+    // Load vertex and fragment shaders
+    const ShadowVertexShader = LoadShader(WebGL, WebGL.VERTEX_SHADER, ShadowVertexSource);
+    const ShadowFragmentShader = LoadShader(WebGL, WebGL.FRAGMENT_SHADER, ShadowFragmentSource);
+
+    // Create the shader program
+    const ShadowShaderProgram = WebGL.createProgram();
+    WebGL.attachShader(ShadowShaderProgram, ShadowVertexShader);
+    WebGL.attachShader(ShadowShaderProgram, ShadowFragmentShader);
+    WebGL.linkProgram(ShadowShaderProgram);
+
+    if (!WebGL.getProgramParameter(ShadowShaderProgram, WebGL.LINK_STATUS)) {
+        alert("Unable to initialize the shadow shader program: " + WebGL.getProgramInfoLog(ShadowShaderProgram));
+    }
+
+    // Collect shader attributes and uniform locations
+    const ShadowProgramInfo = {
+        AttribLocations:
+        {
+            VertexPosition: WebGL.getAttribLocation(ShadowShaderProgram, "VertexPosition"),
+        },
+
+        UniformLocations:
+        {
+            LightSpaceMatrix: WebGL.getUniformLocation(ShadowShaderProgram, "LightSpaceMatrix"),
+        },
+    };
+
+    // Tell WebGL to use shadow map program for rendering
+    WebGL.useProgram(ShadowShaderProgram);
+
+    // Bind frame buffer and viewport then clear texture for rendering
+    WebGL.bindFramebuffer(WebGL.FRAMEBUFFER, ShadowFramebuffer);
+    WebGL.viewport(0, 0, ShadowMapWidth, ShadowMapHeight);
+    WebGL.clear(WebGL.DEPTH_BUFFER_BIT);
+
+    // Bind position buffer
+    WebGL.bindBuffer(WebGL.ARRAY_BUFFER, PositionBuffer);
+    WebGL.enableVertexAttribArray(ShadowProgramInfo.AttribLocations.VertexPosition); // Enable the attribute
+    WebGL.vertexAttribPointer(ShadowProgramInfo.AttribLocations.VertexPosition, 3, WebGL.FLOAT, false, 0, 0); // Tell the attribute how to get data out of buffer
+    
+    // Pass in all uniforms
+    WebGL.uniformMatrix4fv(ShadowProgramInfo.UniformLocations.LightSpaceMatrix, false, LightSpaceMatrix);
+    
+    // Draw the triangles
+    WebGL.drawArrays(WebGL.TRIANGLES, 0, TriangleCount);
+
+    // Return final rendered texture
+    return ShadowDepthTexture
+}
+
+function Normalize(Vector)
+{
+    let Distance = Math.sqrt(Vector[0] ** 2 + Vector[1] ** 2 + Vector[2] ** 2);
+
+    // Avoid div 0 error
+    if (Distance > 0.00001)
+    {
+        return [Vector[0] / Distance, Vector[1] / Distance, Vector[2] / Distance];
+    }
+
+    else
+    {
+        return [0, 0, 0];
+    }
+}
+
+function SubtractVectors(VectorA, VectorB)
+{
+    return [VectorA[0] - VectorB[0], VectorA[1] - VectorB[1], VectorA[2] - VectorB[2]];
+}
+
+function Cross(VectorA, VectorB)
+{
+    return [
+        VectorA[1] * VectorB[2] - VectorA[2] * VectorB[1],
+        VectorA[2] * VectorB[0] - VectorA[0] * VectorB[2],
+        VectorA[0] * VectorB[1] - VectorA[1] * VectorB[0],
+    ];
+}
+
+function Dot(VectorA, VectorB)
+{
+    return VectorA[0] * VectorB[0] + VectorA[1] * VectorB[1] + VectorA[2] * VectorB[2];
+}
+
+function Determinant3x3(A, B, C, D, E, F, G, H, I)
+{
+    return A * (E * I - F * H) - B * (D * I - F * G) + C * (D * H - E * G);
+}
+
+const MatrixFunctions = {
+    Orthographic: function(Left, Right, Bottom, Top, Near, Far)
+    {
+        return [
+            2 / (Right - Left), 0, 0, -(Right + Left) / (Right - Left),
+            0, 2 / (Top - Bottom), 0, -(Top + Bottom) / (Top - Bottom),
+            0, 0, 2 / (Far - Near), -(Far + Near) / (Far - Near),
+            0, 0, 0, 1,
+        ];
+    },
+
+    LookAt: function(CameraPosition, TargetPosition, UpVector)
+    {
+        var Forward = Normalize(SubtractVectors(TargetPosition, CameraPosition));
+        var Side = Normalize(Cross(UpVector, Forward));
+        var Up = Normalize(Cross(Forward, Side));
+     
+        return [
+            Side[0], Side[1], Side[2], -Dot(Side, TargetPosition),
+            Up[0], Up[1], Up[2], -Dot(Up, TargetPosition),
+            -Forward[0], -Forward[1], -Forward[2], -Dot(Forward, TargetPosition),
+            0, 0, 0, 1,
+        ];
+    },
+
+    Perspective: function(FieldOfViewRadians, AspectRatio, NearPlane, FarPlane)
+    {
+        const TanFov = 1.0 / Math.tan(FieldOfViewRadians * 0.5);
+        const Range = 1.0 / (NearPlane - FarPlane);
+     
+        return [
+            TanFov / AspectRatio, 0, 0, 0,
+            0, TanFov, 0, 0,
+            0, 0, (FarPlane + NearPlane) * Range, 2 * FarPlane * NearPlane * Range,
+            0, 0, -1, 0
+        ];
+    },
+
+    Base: function()
+    {
+        return [1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 1,
+                0, 0, 0, 1];
+    },
+
+    Translate: function(Matrix, TranslationX, TranslationY, TranslationZ)
+    {
+        const Translation = [
+            1,  0,  0,  0,
+            0,  1,  0,  0,
+            0,  0,  1,  0,
+            TranslationX, TranslationY, TranslationZ, 1,
+        ];
+
+        return MatrixFunctions.Multiply(Matrix, Translation);
+    },
+    
+    RotateX: function(Matrix, AngleRadians)
+    {
+        const CosAngle = Math.cos(AngleRadians);
+        const SinAngle = Math.sin(AngleRadians);
+
+        const RotationX = [
+            1, 0, 0, 0,
+            0, CosAngle, SinAngle, 0,
+            0, -SinAngle, CosAngle, 0,
+            0, 0, 0, 1,
+        ];
+
+        return MatrixFunctions.Multiply(Matrix, RotationX);
+    },
+    
+    RotateY: function(Matrix, AngleRadians)
+    {
+        const CosAngle = Math.cos(AngleRadians);
+        const SinAngle = Math.sin(AngleRadians);
+
+        const RotationY = [
+            CosAngle, 0, -SinAngle, 0,
+            0, 1, 0, 0,
+            SinAngle, 0, CosAngle, 0,
+            0, 0, 0, 1,
+        ];
+
+        return MatrixFunctions.Multiply(Matrix, RotationY);
+    },
+    
+    RotateZ: function(Matrix, AngleRadians)
+    {
+        const CosAngle = Math.cos(AngleRadians);
+        const SinAngle = Math.sin(AngleRadians);
+
+        const RotationZ = [
+            CosAngle, SinAngle, 0, 0,
+            -SinAngle, CosAngle, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1,
+        ];
+
+        return MatrixFunctions.Multiply(Matrix, RotationZ);
+    },
+    
+    Scale: function(Matrix, ScaleX, ScaleY, ScaleZ)
+    {
+        const Scaling = [
+            ScaleX, 0,  0,  0,
+            0, ScaleY,  0,  0,
+            0,  0, ScaleZ,  0,
+            0,  0,  0,  1,
+        ];
+
+        return MatrixFunctions.Multiply(Matrix, Scaling);
+    },
+
+    Multiply: function(MatrixA, MatrixB)
+    {
+        let Result = new Array(16);
+    
+        for (let i = 0; i < 16; i++)
+        {
+            let Col = Math.floor(i / 4) * 4;
+            let Row = i % 4;
+    
+            Result[i] = MatrixB[Col] * MatrixA[Row] + MatrixB[Col + 1] * MatrixA[Row + 4] + MatrixB[Col + 2] * MatrixA[Row + 8] + MatrixB[Col + 3] * MatrixA[Row + 12];
+        }
+    
+        return Result;
+    },
+
+    Inverse: function(Matrix)
+    {
+        const InverseMatrix = new Float32Array(16);
+
+        const A00 = Matrix[0],  A01 = Matrix[1],  A02 = Matrix[2],  A03 = Matrix[3];
+        const A10 = Matrix[4],  A11 = Matrix[5],  A12 = Matrix[6],  A13 = Matrix[7];
+        const A20 = Matrix[8],  A21 = Matrix[9],  A22 = Matrix[10], A23 = Matrix[11];
+        const A30 = Matrix[12], A31 = Matrix[13], A32 = Matrix[14], A33 = Matrix[15];
+
+        const Determinant = 
+            A00 * Determinant3x3(A11, A21, A31, A12, A22, A32, A13, A23, A33) -
+            A01 * Determinant3x3(A10, A20, A30, A12, A22, A32, A13, A23, A33) +
+            A02 * Determinant3x3(A10, A20, A30, A11, A21, A31, A13, A23, A33) -
+            A03 * Determinant3x3(A10, A20, A30, A11, A21, A31, A12, A22, A32);
+
+        if (Determinant === 0)
+        {
+            alert("Matrix is not invertible");
+        }
+
+        const InverseDeterminant = 1.0 / Determinant;
+
+        InverseMatrix[0]  =  InverseDeterminant * Determinant3x3(A11, A21, A31, A12, A22, A32, A13, A23, A33);
+        InverseMatrix[1]  = -InverseDeterminant * Determinant3x3(A01, A21, A31, A02, A22, A32, A03, A23, A33);
+        InverseMatrix[2]  =  InverseDeterminant * Determinant3x3(A01, A11, A31, A02, A12, A32, A03, A13, A33);
+        InverseMatrix[3]  = -InverseDeterminant * Determinant3x3(A01, A11, A21, A02, A12, A22, A03, A13, A23);
+
+        InverseMatrix[4]  = -InverseDeterminant * Determinant3x3(A10, A20, A30, A12, A22, A32, A13, A23, A33);
+        InverseMatrix[5]  =  InverseDeterminant * Determinant3x3(A00, A20, A30, A02, A22, A32, A03, A23, A33);
+        InverseMatrix[6]  = -InverseDeterminant * Determinant3x3(A00, A10, A30, A02, A12, A32, A03, A13, A33);
+        InverseMatrix[7]  =  InverseDeterminant * Determinant3x3(A00, A10, A20, A02, A12, A22, A03, A13, A23);
+
+        InverseMatrix[8]  =  InverseDeterminant * Determinant3x3(A10, A20, A30, A11, A21, A31, A13, A23, A33);
+        InverseMatrix[9]  = -InverseDeterminant * Determinant3x3(A00, A20, A30, A01, A21, A31, A03, A23, A33);
+        InverseMatrix[10] =  InverseDeterminant * Determinant3x3(A00, A10, A30, A01, A11, A31, A03, A13, A33);
+        InverseMatrix[11] = -InverseDeterminant * Determinant3x3(A00, A10, A20, A01, A11, A21, A03, A13, A23);
+
+        InverseMatrix[12] = -InverseDeterminant * Determinant3x3(A10, A20, A30, A11, A21, A31, A12, A22, A32);
+        InverseMatrix[13] =  InverseDeterminant * Determinant3x3(A00, A20, A30, A01, A21, A31, A02, A22, A32);
+        InverseMatrix[14] = -InverseDeterminant * Determinant3x3(A00, A10, A30, A01, A11, A31, A02, A12, A32);
+        InverseMatrix[15] =  InverseDeterminant * Determinant3x3(A00, A10, A20, A01, A11, A21, A02, A12, A22);
+
+        return InverseMatrix;
+    },
+}
+
+
+// All previous outputs from commands and such
+let OutputsText = "";
+// Lets user scroll through the past outputs
+let ScrollOffset = 0;
+
+// String to store the current text input
+let InputText = "";
+// Dictionary to store info about the text blinker
+let Blinker = {Index: 0, Time: Date.now() * 0.001};
+
+// Current directory
+let Directory = "C:/Users/guest";
+
+// Stores weather to render plasma or normal terminal
+let DisplayPlasma = false;
+
+// Function to give text for rendering
+function GetText()
+{
+    // Text to be displayed
+    let FinalText = "";
+
+    if (Time < 5) // If in boot sequence
+    {
+        BootSequence();
+        FinalText = OutputsText;
+    }
+
+    else if (!DisplayPlasma) // If not in boot sequence
+    {
+        // Trim the previous output to be displayed
+        let Lines = OutputsText.split("\n");
+        FinalText += Lines.slice(ScrollOffset, Math.min(ScrollOffset + 30, Lines.length)).join("\n");
+
+        // Check if command input is on screen
+        if (ScrollOffset + 30 >= Lines.length)
+        {
+            if ((Date.now() * 0.001 - Blinker.Time) % 1 < 0.5) // Show blinker
+            {
+                FinalText += `${Directory}> ${InputText.slice(0, Blinker.Index)}█${InputText.slice(Blinker.Index + 1, InputText.length)}`;
+            }
+
+            else // Dont show blinker
+            {
+                FinalText += `${Directory}> ${InputText}`;
+            }
+        }
+    }
+
+    else
+    {
+        return GetTextPlasma();
+    }
+
+    return FinalText;
+}
+
+// Function to handle key press and text input
+function KeyPressed(key)
+{
+    if (DisplayPlasma)
+    {
+        if (key === "Escape")
+        {
+            DisplayPlasma = false;
+        }
+    }
+
+    else if (Time > 5)
+    {
+        let LinesCount = OutputsText.split("\n").length;
+
+        if (key.length === 1 && InputText.length + Directory.length + 3 < 55) // Add character
+        {
+            InputText = InputText.slice(0, Blinker.Index) + key.toLowerCase() + InputText.slice(Blinker.Index, InputText.length);
+            Blinker = {Index: Blinker.Index + 1, Time: Date.now() * 0.001}; // Update blinker pos and reset its time
+            if (ScrollOffset < LinesCount - 30) {ScrollOffset = Math.max(0, LinesCount - 30);} // Reset the scroll if off screen
+        }
+        
+        else if (key === "Backspace" && InputText && Blinker.Index > 0) // Remove character
+        {
+            InputText = InputText.slice(0, Blinker.Index - 1) + InputText.slice(Blinker.Index, InputText.length);
+            Blinker = {Index: Blinker.Index - 1, Time: Date.now() * 0.001}; // Update blinker pos and reset its time
+            if (ScrollOffset < LinesCount - 30) {ScrollOffset = Math.max(0, LinesCount - 30);} // Reset the scroll if off screen
+        }
+
+        else if (key === "ArrowLeft") // Move blinker left
+        {
+            Blinker = {Index: Math.max(0, Blinker.Index - 1), Time: Date.now() * 0.001};
+        }
+
+        else if (key === "ArrowRight") // Move blinker right
+        {
+            Blinker = {Index: Math.min(InputText.length, Blinker.Index + 1), Time: Date.now() * 0.001};
+        }
+
+        else if (key === "ArrowUp") // Scroll text upwards
+        {
+            ScrollOffset = Math.max(0, ScrollOffset - 1);
+        }
+
+        else if (key === "ArrowDown") // Scroll text downwards
+        {
+            ScrollOffset = Math.min(LinesCount - 1, ScrollOffset + 1);
+        }
+
+        else if (key === "Tab") // Auto complete
+        {
+            AutoComplete(); // Complete input text
+            Blinker = {Index: InputText.length, Time: Date.now() * 0.001}; // Update blinker pos and reset its time
+            if (ScrollOffset < LinesCount - 30) {ScrollOffset = Math.max(0, LinesCount - 30);} // Reset the scroll if off screen
+        }
+
+        else if (key === "Enter") // Submit text
+        {
+            OutputsText += `${Directory}> ${InputText}\n`;
+            ExecuteCommand();
+
+            InputText = "";
+            Blinker = {Index: 0, Time: Date.now() * 0.001};
+
+            LinesCount = OutputsText.split("\n").length;
+            if (ScrollOffset < LinesCount - 30) {ScrollOffset = Math.max(0, LinesCount - 30);}
+        }
+    }
+}
+
+function BootSequence()
+{
+    OutputsText = "";
+    let LoadingChars = ["-", "\\", "|", "/"];
+
+    if (Time > 0.1) {OutputsText += "=======================================================\n";}
+    if (Time > 0.3) {OutputsText += "                 A R O M A L   M B\n";}
+    if (Time > 0.5) {OutputsText += "                   AI / ML ENGINEER\n";}
+    if (Time > 0.6) {OutputsText += "=======================================================\n\n\n\n";}
+    if (Time > 1.1) {OutputsText += "Welcome to Aromal-OS 1.0 x86_64\n";}
+    if (Time > 1.2) {OutputsText += "Type 'help' to list available commands\n\n\n";}
+    if (Time > 1.7) {OutputsText += `Loading ${LoadingChars[Math.ceil((Math.min(3.7, Time) % 0.4) / 0.1) - 1]} ${Math.ceil(Math.min(100, (Time - 1.7) / 0.02))}%\n`;}
+    if (Time > 3.7) {OutputsText += ".\n";}
+    if (Time > 3.8) {OutputsText += ".\n";}
+    if (Time > 3.9) {OutputsText += ".\n";}
+    if (Time > 4.0) {OutputsText += "Complete!\n\n";}
+
+    ScrollOffset = Math.min(OutputsText.split("\n").length - 1, ScrollOffset);
+}
+
+// // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+// File system structure (unchanged)
+const FileSystem = {
+    "root": {
+        "type": "directory",
+        "contents": {
+            "projects": {
+                "type": "directory",
+                "contents": {
+                    "ghost.lnk": {
+                        "type": "link",
+                        "content": "https://github.com/Aromal-m-b/Ghost"
+                    },
+                    "tele-caller.lnk": {
+                        "type": "link",
+                        "content": "https://github.com/Aromal-m-b/Tele-Caller"
+                    },
+                    "smart-city-using-iot.lnk": {
+                        "type": "link",
+                        "content": "https://github.com/Aromal-m-b/Smart-City-using-IOT"
+                    },
+                    "rasengana.lnk": {
+                        "type": "link",
+                        "content": "https://github.com/Aromal-m-b/Rasengana"
+                    },
+                    "mugiwara.lnk": {
+                        "type": "link",
+                        "content": "https://github.com/Aromal-m-b/Mugiwara"
+                    },
+                    "pharma-app.lnk": {
+                        "type": "link",
+                        "content": "https://github.com/Aromal-m-b/Pharma-App"
+                    }
+                }
+            },
+            "about.txt": {
+                "type": "file",
+                "content": "Aromal MB | AI/ML Engineer\nChalakudy, Kerala, India\n\nBuilding agentic AI, computer vision, and ML systems.\nPython, PyTorch, LangGraph, FastAPI, Docker, AWS."
+            },
+            "experience.txt": {
+                "type": "file",
+                "content": "Spectrum Softtech Solutions | AI/ML Software Trainee\nAug 2026 - Present\n\nGALTech Technologies | Data Science & ML Intern\nJun 2025 - Jul 2025\n\nB.Tech CSE | College of Engineering, Poonjar\n2022 - 2026 | CGPA 7.88"
+            },
+            "resume.lnk": {
+                "type": "link",
+                "content": "Aromal_MB_Resume.pdf"
+            },
+            "github.lnk": {
+                "type": "link",
+                "content": "https://github.com/Aromal-m-b"
+            },
+            "contact.txt": {
+                "type": "file",
+                "content": "Email: aromalmb1227@gmail.com\nLinkedIn: linkedin.com/in/aromal-mb"
+            },
+            "plasma.exe": {
+                "type": "executable",
+                "content": "plasma"
+            }
+        }
+    }
+};
+
+function ListFiles()
+{
+    // Move to current folder
+    let DirectoryContents = FileSystem.root;
+    for (let Dir of Directory.slice(15).split("/").filter(Boolean)) {DirectoryContents = DirectoryContents.contents[Dir];}
+
+    // Print directory being listed
+    OutputsText += `\nC:/../${Directory.split("/").slice(-1)}`;
+
+    // Print each file
+    const Files = Object.keys(DirectoryContents.contents);
+    for (let [Index, File] of Files.entries()) {OutputsText += `\n${Index == Files.length - 1 ? "┗" : "┣"}${File.includes(".") ? "━▷" : "━━━━"} ${File}`;}
+
+    OutputsText += "\n\n";
+}
+
+function ChangeDirectory(InputDirectory)
+{
+    let CurrentDirectory = Directory.slice(15).split("/").filter(Boolean);
+
+    // Go back a folder
+    if (InputDirectory === "..") {CurrentDirectory.pop();}
+    
+    // Return to root folder
+    else if (InputDirectory === "/") {CurrentDirectory = [];}
+    
+    // Move to new folder
+    else
+    {
+        // Move to current folder
+        let DirectoryContents = FileSystem.root;
+        for (let Dir of CurrentDirectory) {DirectoryContents = DirectoryContents.contents[Dir];}
+
+        // Add new folder to path
+        if (DirectoryContents.contents[InputDirectory] && DirectoryContents.contents[InputDirectory].type === "directory")
+        {CurrentDirectory.push(InputDirectory);}
+        
+        // Desired path dousnt exist
+        else {OutputsText += `\ncd: '${InputDirectory}' No such directory\n\n`;return;}
+    }
+
+    Directory = `C:/Users/guest${CurrentDirectory.length ? "/" : ""}${CurrentDirectory.join("/")}`;
+}
+
+function StartFile(InputFile)
+{
+    // Move to current folder
+    let DirectoryContents = FileSystem.root;
+    for (let Dir of Directory.slice(15).split("/").filter(Boolean)) {DirectoryContents = DirectoryContents.contents[Dir];}
+
+    // Perform action based on what file is opened
+    if (DirectoryContents.contents[InputFile] && DirectoryContents.contents[InputFile].type === "file")
+    {
+        OutputsText += `\n${DirectoryContents.contents[InputFile].content}\n\n`;
+    }
+
+    else if (DirectoryContents.contents[InputFile] && DirectoryContents.contents[InputFile].type === "link")
+    {
+        OutputsText += `\nRedirecting to '${DirectoryContents.contents[InputFile].content}'\n\n`;
+        window.open(DirectoryContents.contents[InputFile].content, "_blank", "noopener,noreferrer");
+    }
+
+    else if (DirectoryContents.contents[InputFile] && DirectoryContents.contents[InputFile].type === "executable")
+    {
+        OutputsText += `\n'${InputFile}' Started successfully\n\n`;
+        DisplayPlasma = true;
+    }
+    
+    // Selected file dousnt exist
+    else {OutputsText += `\nstart: '${InputFile}' No such file\n\n`;}
+}
+
+// Modified ExecuteCommand function
+function ExecuteCommand()
+{
+    const [Command, ...Arguments] = InputText.split(" ");
+
+    if (Command)
+    {
+        ComputerBeep.play().catch(() => {});
+        ComputerBeep.currentTime = 0;
+    }
+
+    switch (Command)
+    {
+        case "ls":
+            if (Arguments.length) {OutputsText += "\nError: 'ls' doesn't accept any arguments\n\n";}
+            else {ListFiles();}
+            break;
+
+        case "cd":
+            if (Arguments.length > 1) {OutputsText += "\nError: 'cd' doesn't accept more that one argument\n\n";}
+            else {ChangeDirectory(Arguments[0]);}
+            break;
+
+        case "start":
+            if (Arguments.length > 1) {OutputsText += "\nError: 'start' doesn't accept more that one argument\n\n";}
+            else {StartFile(Arguments[0]);}
+            break;
+
+        case "clear":
+            if (Arguments.length) {OutputsText += "\nError: 'clear' doesn't accept any arguments\n\n";}
+            else {BootSequence();}
+            break;
+
+        case "help":
+            if (Arguments.length) {OutputsText += "\nError: 'help' doesn't accept any arguments\n\n";}
+            else {OutputsText += "\nPress 'tab' for auto complete and press 'esc' to exit\na program (.exe file)\n\nLS       Lists current directory contents\nCD       Change directory, '..' moves back, '/' to root\nSTART    Opens specified file in current directory\nCLEAR    Clears all previous terminal outputs\n\n";}
+            break;
+
+        case "":
+            break;
+
+        default:
+            OutputsText += `\nCommand not found '${Command}'\n\n`;
+    }
+}
+  
+// Autocomplete function
+function AutoComplete()
+{
+    const [Command, ...Arguments] = InputText.split(" ");
+    const CommandsList = ["ls", "cd", "start", "clear"];
+    
+    // Auto completing a command
+    if (!Arguments.length)
+    {
+        const CompletededCommand = CommandsList.filter(Element => Element.startsWith(Command));
+        if (CompletededCommand.length) {InputText = CompletededCommand[0]};
+    }
+  
+    // Auto comepleting a file name
+    if (["cd", "start"].includes(Command) && Arguments.length < 2)
+    {
+        // Move to current folder
+        let DirectoryContents = FileSystem.root;
+        for (let Dir of Directory.slice(15).split("/").filter(Boolean)) {DirectoryContents = DirectoryContents.contents[Dir];}
+
+        // Possible file names
+        const PossibleCompletions = Object.keys(DirectoryContents.contents).filter(Item => Item.startsWith(Arguments));
+        if (PossibleCompletions.length) {InputText = `${Command} ${PossibleCompletions[0]}`;}
+    }
+}
+
+// // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+function GetTextPlasma()
+{
+    const Letters = [" ", "_", "a", "b", "c", "ö", "õ", "ö", "#", "$", "%", "1", "2", "3", "A", "B", "C"];
+    let Text = "";
+
+    for (let Row = 1; Row < 31; Row++)
+    {
+        for (let Col = 1; Col < 56; Col++)
+        {
+            const Intensity = GetIntensityPlasma(Row / 30, Col / 55);
+            Text += Letters[Math.max(Math.min(Math.floor(Intensity) - 1, Letters.length - 1), 0)];
+        }
+
+        Text += "\n";
+    }
+
+    return Text
+}
+
+function GetIntensityPlasma(Row, Col)
+{ 
+    let Intensity = 0.0;
+
+    Intensity += 0.7 * Math.sin(0.5 * Row + Time / 5);
+    Intensity += 3 * Math.sin(1.6 * Col + Time / 5);
+    Intensity += 1 * Math.sin(10 * (Col * Math.sin(Time / 2) + Row * Math.cos(Time / 5)) + Time / 2);
+
+    const CyclicX = Row + 0.5 * Math.sin(Time / 2);
+    const CyclicY = Col + 0.5 * Math.cos(Time / 4);
+
+    Intensity += 0.4 * Math.sin(Math.sqrt(100 * CyclicX ** 2 + 100 * CyclicY ** 2 + 1) + Time);
+    Intensity += 0.9 * Math.sin(Math.sqrt(75 * CyclicX ** 2 + 25 * CyclicY ** 2 + 1) + Time);
+    Intensity += -1.4 * Math.sin(Math.sqrt(256 * CyclicX ** 2 + 25 * CyclicY ** 2 + 1) + Time);
+    Intensity += 0.3 * Math.sin(0.5 * Col + Row + Math.sin(Time));
+
+    return 17 * (0.5 + 0.499 * Math.sin(Intensity)) * (0.7 + Math.sin(Time) * 0.3);
+}
+
+
+// Get the canvas element
+
+
+// Initialize the WebGL2 context
+const WebGL = Canvas.getContext("webgl2");
+
+if (!WebGL)
+{
+    throw new Error("WebGL2 is not available");
+}
+
+// Vertex shader source code
+const VertexSource = `#version 300 es
+
+in vec4 VertexPosition;
+in vec2 InTextureCoord;
+in vec3 InNormalVector;
+in vec4 InSurfaceColor;
+
+out vec3 SurfaceToCameraVector;
+out vec2 TextureCoord;
+out vec3 NormalVector;
+out vec4 PositionFromLight;
+out vec4 SurfaceColor;
+
+uniform mat4 VertexTransformationMatrix;
+uniform mat4 NormalTransformationMatrix;
+uniform mat4 LightSpaceMatrix;
+uniform mat4 ModelMatrix;
+
+void main(void)
+{
+    gl_Position = VertexTransformationMatrix * VertexPosition;
+    SurfaceToCameraVector = -normalize(VertexPosition * ModelMatrix).xyz;
+    TextureCoord = InTextureCoord;
+    NormalVector = mat3(NormalTransformationMatrix) * InNormalVector;
+    PositionFromLight = LightSpaceMatrix * VertexPosition;
+    SurfaceColor = InSurfaceColor;
+}`;
+
+// Fragment shader source code
+const FragmentSource = `#version 300 es
+
+precision highp float;
+
+in vec3 SurfaceToCameraVector;
+in vec2 TextureCoord;
+in vec3 NormalVector;
+in vec4 PositionFromLight;
+in vec4 SurfaceColor;
+
+out vec4 OutputColor;
+
+uniform sampler2D ShadowMap;
+uniform sampler2D TextTexture;
+uniform float Time;
+
+const vec3 LightColor = vec3(0.52, 0.36, 0.2); // Orange
+//const vec3 LightColor = vec3(0.2, 0.53, 0.2); // Green
+const vec3 SurfaceToLightVector = normalize(vec3(0.0, 5.0, 1.0));
+
+float CalculateShadow(vec4 FragPosLightSpace, sampler2D ShadowMap)
+{
+    // Perform perspective divide
+    vec3 ProjedtedCoords = FragPosLightSpace.xyz / FragPosLightSpace.w;
+    
+    // Transform to [0,1] range
+    ProjedtedCoords = ProjedtedCoords * 0.5 + 0.5;
+    
+    // Get depth of current fragment from light's perspective
+    float CurrentDepth = ProjedtedCoords.z;
+
+    // Calculate bias based on depth map texel size
+    vec2 TexelSize = 1.0 / vec2(textureSize(ShadowMap, 0));
+
+    // Variable for shadow intensity
+    float ShadowIntensity = 0.0;
+    
+    // Percentage Closer Filtering (PCF)
+    for(int x = -1; x <= 1; x++)
+    {
+        for(int y = -1; y <= 1; y++)
+        {
+            float pcfDepth = texture(ShadowMap, ProjedtedCoords.xy + vec2(x, y) * TexelSize).r;
+            ShadowIntensity += CurrentDepth - 0.02 > pcfDepth ? 1.0 : 0.0; // Bias is 0.02
+        }
+    }
+
+    ShadowIntensity /= 9.0;
+    
+    // Prevent shadow outside of far plane
+    if(ProjedtedCoords.z > 1.0) {ShadowIntensity = 1.0;}
+
+    return ShadowIntensity;
+}
+
+float Random(vec2 Seed)
+{
+    return fract(sin(dot((Seed * (mod(Time, 1.0) + 1.0)), vec2(11.9898, 78.233))) * 43758.5453);
+}
+
+vec2 CurvedSurface(vec2 Coords, float Radius)
+{
+    return Radius * Coords / sqrt(Radius * Radius - dot(Coords, Coords));
+}
+
+vec3 CompressColor(vec3 Color, float Amount)
+{
+    // Calculate the average of the color components
+    float Average = (Color.r + Color.g + Color.b) / 3.0;
+    
+    // Interpolate between the original color and the average (white point)
+    return mix(Color, vec3(Average), Amount);
+}
+
+vec4 ScreenShader(float LightIntesity, float SpecularIntensity)
+{
+    // Get UV coords in range 1 to 0
+    vec2 CoordsUV = vec2((TextureCoord.y - 0.522500) / 0.205000, (TextureCoord.x - 0.402778) / 0.194444);
+    // Note for self max and min or each axis X:(0.402778, 0.597222), Y:(0.522500, 0.727500)
+
+    // Small reapeting scanlines effect
+    float ScanLines = mod(CoordsUV.y, 0.01) / 0.01;
+    ScanLines = min(abs((ScanLines - 0.2) / 0.2), 1.0) * 0.5;
+
+    // Noise in background
+    float Noise = 0.1 * (Random(CoordsUV) - 0.5);
+
+    // Large scane line effect
+    float ScanPosition = 1.0 - mod(Time / 5.0, 2.0);
+    float DistToScan = 1.0 - (CoordsUV.y - ScanPosition) * 4.0;
+    vec3 ScreenScan = (DistToScan > 0.0 && DistToScan < 1.0) ? CompressColor(LightColor, 0.5) * 0.075 * DistToScan : vec3(0.0);
+
+    // Backlighting from screen
+    float Backlighting = max(0.0, 2.0 - length((CoordsUV * 2.0 - 1.0) / 0.5));
+    
+    // Apply scan line effect + lighting specular and diffuse + back lighting from screen
+    vec3 FinalColor = (SpecularIntensity + Noise + ScreenScan) + (LightIntesity * ScanLines * Backlighting * LightColor);
+
+    // Render text /////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    float BorderSize = 0.075;
+
+    // If inside region where text is rendered
+    if (max(abs(CoordsUV - 0.5).x, abs(CoordsUV - 0.5).y) + BorderSize < 0.5)
+    {
+        // Coords to sample text texture at
+        vec2 TextCoords = 1.0 - (CoordsUV - BorderSize) / (1.0 - BorderSize * 2.0);
+
+        // Base color from text texture
+        vec3 TextColor = texture(TextTexture, TextCoords).rgb;
+        
+        // Glow effect using mipmaps
+        vec3 Glow = (textureLod(TextTexture, TextCoords, 3.0).rgb + textureLod(TextTexture, TextCoords, 4.0).rgb + textureLod(TextTexture, TextCoords, 5.0).rgb) * 0.5;
+        
+        // Combine base color and glow
+        FinalColor += (TextColor + Glow) * min(1.0, ScanLines + 0.65);
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    // Calculate ambient occlusion (dark region at edge of screen)
+    vec2 CurvedUV = CurvedSurface((CoordsUV * 2.0 - 1.0) * 1.28, 5.0) / 2.0;
+    float ScreenSDF = 0.15 + (length(max(abs(CurvedUV) - vec2(0.5), 0.0)) - 0.1) * 10.0;
+    float AmbientOcclusion = min(1.0, smoothstep(1.0, 0.0, ScreenSDF));
+
+    return vec4(FinalColor * AmbientOcclusion, 1.0);
+}
+
+void main(void)
+{
+    // Calculate diffuse directional lighting and set ambient lighting
+    float AmbientLightIntensity = 0.175;//0.25;
+    float DirectionalLightIntensity = (dot(NormalVector, SurfaceToLightVector) + 1.0) * 0.5 * 0.575;//0.75;
+
+    // Calculate shadows
+    float ShadowIntensity = CalculateShadow(PositionFromLight, ShadowMap);
+
+    // Calculate specular component of lighting
+    vec3 HalfVector = normalize(SurfaceToCameraVector + SurfaceToLightVector);
+    float Specular = pow(max(0.0, dot(NormalVector, HalfVector)), 2.0);
+    Specular = mix(Specular, 0.0, ShadowIntensity); // Apply shadows to specular
+
+    // Check if pixel is inside the screen
+    if (SurfaceColor.g < 0.1 && SurfaceColor.r > 0.9)
+    {
+        // Render the screen
+        OutputColor = ScreenShader(AmbientLightIntensity + DirectionalLightIntensity, Specular);
+    }
+
+    // Is pixel is not on the screen
+    else
+    {
+        // Base lighting on surface ////////////////////////////////////////////////////////////////////////////////////////
+
+        // Apply lighting to surface based on its color
+        vec4 AmbientLighting = SurfaceColor * AmbientLightIntensity;
+        vec4 DirectionalLighting = SurfaceColor * DirectionalLightIntensity;
+
+        // Apply shadows to directional lighting
+        DirectionalLighting = mix(DirectionalLighting, DirectionalLighting * 0.5, ShadowIntensity);
+
+        // Sum all lights contributions to final color
+        OutputColor = AmbientLighting + DirectionalLighting + Specular * clamp(SurfaceColor.r, 0.5, 0.75);
+
+        // Screen glow onto the monitor ////////////////////////////////////////////////////////////////////////////////////
+
+        // Get distance from the screen
+        vec2 Centered = TextureCoord - vec2(0.5, 0.625);
+        vec2 Offsets = abs(Centered) - vec2(0.097222, 0.1025);
+        float Distance = length(max(Offsets, 0.0));
+
+        // Scale distance and inverse it for light fall of
+        float Intensisty = 1.0 - min(Distance / 0.001, 1.0);
+
+        if (Intensisty > 0.0 && PositionFromLight.y > -0.457)
+        {
+            float BlurIterations = 150.0;
+            float BlurSize = 0.3;
+
+            vec2 CoordsUVBase = 1.0 - (TextureCoord.yx - vec2(0.5225, 0.402778)) / vec2(0.205, 0.194444);
+            vec4 ScreenLightIntensisty = vec4(0.0);
+
+            for(float i = 0.0; i < BlurIterations; i++)
+            {
+                // Calculate randomly offset sampling coords
+                vec2 RandomOffset = vec2(Random(CoordsUVBase + i), Random(CoordsUVBase.yx + i + 1.0)) - 0.5;
+                vec2 CoordsUVRandom = clamp(CoordsUVBase + RandomOffset * BlurSize, 0.0, 1.0);
+
+                // Sample screen texture and add sample to the overall lighting
+                vec4 SampledColor = textureLod(TextTexture, CoordsUVRandom, 5.0) / BlurIterations;
+                ScreenLightIntensisty += (1.0 - OutputColor) * SampledColor;
+            }
+
+            // Add the screen glow to the final color
+            OutputColor += ScreenLightIntensisty * Intensisty * 10.0;
+        }
+
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    }
+
+    OutputColor = vec4(clamp(OutputColor.rgb, 0.0, 1.0), 1.0);
+}`;
+
+// Load vertex and fragment shaders
+const VertexShader = LoadShader(WebGL, WebGL.VERTEX_SHADER, VertexSource);
+const FragmentShader = LoadShader(WebGL, WebGL.FRAGMENT_SHADER, FragmentSource);
+
+// Create the shader program
+const ShaderProgram = WebGL.createProgram();
+WebGL.attachShader(ShaderProgram, VertexShader);
+WebGL.attachShader(ShaderProgram, FragmentShader);
+WebGL.linkProgram(ShaderProgram);
+
+if (!WebGL.getProgramParameter(ShaderProgram, WebGL.LINK_STATUS))
+{
+    alert("Unable to initialize the shader program: " + WebGL.getProgramInfoLog(ShaderProgram));
+}
+
+// Collect shader attributes and uniform locations
+const ProgramInfo = {
+    AttribLocations:
+    {
+        VertexPosition: WebGL.getAttribLocation(ShaderProgram, "VertexPosition"),
+        TextureCoord: WebGL.getAttribLocation(ShaderProgram, "InTextureCoord"),
+        NormalVector: WebGL.getAttribLocation(ShaderProgram, "InNormalVector"),
+        SurfaceColor: WebGL.getAttribLocation(ShaderProgram, "InSurfaceColor"),
+    },
+
+    UniformLocations: 
+    {
+        VertexTransformationMatrix: WebGL.getUniformLocation(ShaderProgram, "VertexTransformationMatrix"),
+        NormalTransformationMatrix: WebGL.getUniformLocation(ShaderProgram, "NormalTransformationMatrix"),
+        LightSpaceMatrix: WebGL.getUniformLocation(ShaderProgram, "LightSpaceMatrix"),
+        ModelMatrix: WebGL.getUniformLocation(ShaderProgram, "ModelMatrix"),
+        ShadowMap: WebGL.getUniformLocation(ShaderProgram, "ShadowMap"),
+        TextTexture: WebGL.getUniformLocation(ShaderProgram, "TextTexture"),
+        Time: WebGL.getUniformLocation(ShaderProgram, "Time"),
+    },
+};
+
+// Vertex positions for the object
+const [Positions, TextureCoords, Normals, Colors] = LoadObject(ObjectFile, MaterialFile);
+const TriangleCount = Positions.length / 3;
+
+// Create a buffer for the triangles positions
+const PositionBuffer = WebGL.createBuffer();
+WebGL.bindBuffer(WebGL.ARRAY_BUFFER, PositionBuffer);
+WebGL.bufferData(WebGL.ARRAY_BUFFER, new Float32Array(Positions), WebGL.STATIC_DRAW);
+
+// Create a buffer for the texture coords
+const TextureCoordBuffer = WebGL.createBuffer();
+WebGL.bindBuffer(WebGL.ARRAY_BUFFER, TextureCoordBuffer);
+WebGL.bufferData(WebGL.ARRAY_BUFFER, new Float32Array(TextureCoords), WebGL.STATIC_DRAW);
+
+// Create a buffer for the normal vectors
+const NormalVectorBuffer = WebGL.createBuffer();
+WebGL.bindBuffer(WebGL.ARRAY_BUFFER, NormalVectorBuffer);
+WebGL.bufferData(WebGL.ARRAY_BUFFER, new Float32Array(Normals), WebGL.STATIC_DRAW);
+
+// Create a buffer for the material color
+const ColorBuffer = WebGL.createBuffer();
+WebGL.bindBuffer(WebGL.ARRAY_BUFFER, ColorBuffer);
+WebGL.bufferData(WebGL.ARRAY_BUFFER, new Float32Array(Colors), WebGL.STATIC_DRAW);
+
+// Enable depth testing and face culling
+WebGL.enable(WebGL.DEPTH_TEST);
+WebGL.enable(WebGL.CULL_FACE);
+
+// Shadow map stuffs // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+// Model matrix for model transformations
+let ModelMatrix = MatrixFunctions.Orthographic(-1, 1, -1, 1, -1, 1);
+ModelMatrix = MatrixFunctions.RotateY(ModelMatrix, -1.571);
+ModelMatrix = MatrixFunctions.Scale(ModelMatrix, 0.5, 0.5, 0.5);
+
+// Light space matrix for dirctional light
+const LightSpaceMatrix = MatrixFunctions.Multiply(MatrixFunctions.LookAt([0, -5, -1], [0, 0, 0], [0, 1, 0]), ModelMatrix);
+
+// Create shadow map
+const ShadowMap = GenerateShadowMap(2048, 2048, LightSpaceMatrix)
+
+// // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+// Set frame buffer and viewport for main camera rendering
+WebGL.bindFramebuffer(WebGL.FRAMEBUFFER, null);
+WebGL.viewport(0, 0, WebGL.canvas.width, WebGL.canvas.height);
+
+// Tell WebGL to use our program for drawing to main camera
+WebGL.useProgram(ShaderProgram);
+
+// Text rendering stuffs // // // // // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+// Create an offscreen canvas
+const TextCanvas = document.createElement("canvas");
+const Context = TextCanvas.getContext("2d");
+
+// Set canvas size (adjust as needed)
+TextCanvas.width = TextCanvas.height = 1024;
+
+// Create texture
+const TextTexture = WebGL.createTexture();
+
+function UpdateTextTexture(NewText)
+{
+    // Render text on the canvas
+    Context.clearRect(0, 0, TextCanvas.width, TextCanvas.height);
+    Context.font = "32px monospace";//"32px VT323, monospace";
+    Context.fillStyle = "rgb(255, 150, 50)"; // Orange
+    //Context.fillStyle = "rgb(125, 255, 50)"; // Green
+    
+    const Lines = NewText.split("\n");
+    Lines.forEach((Line, i) => {
+        Context.fillText(Line, 32, 64 + i * 32);
+    });
+
+    // Update texture from canvas
+    WebGL.bindTexture(WebGL.TEXTURE_2D, TextTexture);
+    WebGL.texImage2D(WebGL.TEXTURE_2D, 0, WebGL.RGBA, WebGL.RGBA, WebGL.UNSIGNED_BYTE, TextCanvas);
+    WebGL.texParameteri(WebGL.TEXTURE_2D, WebGL.TEXTURE_MIN_FILTER, WebGL.LINEAR_MIPMAP_LINEAR);
+    WebGL.texParameteri(WebGL.TEXTURE_2D, WebGL.TEXTURE_MAG_FILTER, WebGL.LINEAR);
+    WebGL.generateMipmap(WebGL.TEXTURE_2D);
+}
+
+// 30 lines max each line 55 chars long max
+
+// Mouse input handling // // // // // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+let MouseOffset = [0, 0];
+let MousePosition = [0, 0];
+
+// Event listener for mouse movements
+listen(Canvas, "mousemove", (event) => {
+    MousePosition = [event.clientX, event.clientY];
+    event.preventDefault();
+});
+
+let MouseDown = false;
+
+// Check if left mouse button down
+listen(Canvas, "mousedown", (event) => {
+    if(event.button === 0)
+    {
+        MouseDown = true;
+        MouseOffset = MousePosition;
+    }
+
+    event.preventDefault();
+});
+
+// Check if left mouse button up
+listen(Canvas, "mouseup", (event) => {
+    if(event.button === 0)
+    {
+        MouseDown = false;
+    }
+
+    event.preventDefault();
+});
+
+// Prevent right click context menu appearing
+//listen(Canvas, "contextmenu", (event) => {
+//    event.preventDefault();
+//});
+
+let Rotation = [0, 0];
+
+// Keyboard input hanling // // // // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+// Object to store currrent key state
+let CurrentlyPressedKey = null;
+
+// Event listener for keydown
+listen(Canvas, "keydown", (event) => {
+    if (!["Enter", CurrentlyPressedKey].includes(event.key))
+    {
+        KeyboardPressed.play().catch(() => {});
+        KeyboardPressed.currentTime = 0;
+    }
+
+    if (event.key === "Tab" && event.shiftKey) return;
+    CurrentlyPressedKey = event.key;
+    KeyPressed(event.key);
+    if (!(event.key === "Tab" && event.shiftKey)) event.preventDefault();
+});
+
+// Event listener for keyup
+listen(Canvas, "keyup", (event) => {
+    CurrentlyPressedKey = null;
+    event.preventDefault();
+});
+
+// Audio stuff // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+// Load all sounds
+
+
+
+
+
+ComputerBoot.volume = 0;
+ComputerAmbient.volume = 0;
+
+// // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+// Add tabindex to make canvas focusable
+Canvas.tabIndex = 1;
+
+let Time = 0;
+let LastTime = 0;
+
+// Draw the scene
+function UpdateScene(CurrentTime)
+{
+    // Check if this is first render
+    if (!booted)
+    {
+        booted = true;
+        // Play boot and ambient sounds
+        ComputerBoot.play().catch(() => {});
+        ComputerAmbient.play().catch(() => {});
+
+        // Make ambient sound repeat
+        ComputerAmbient.loop = true;
+
+        // Reset time
+        LastTime = CurrentTime * 0.001 - 0.01;
+    }
+
+    // Time keeping // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+    if (LastTime === null) LastTime = CurrentTime * 0.001;
+    CurrentTime *= 0.001; // Convert time to seconds
+    const DeltaTime = CurrentTime - LastTime; // Get time since last update
+    LastTime = CurrentTime; // Update last time variable
+    Time += DeltaTime; // Time accumulator for fixed time step
+
+    // Update the rotation of the camera // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+    // Update the text on the screen
+    UpdateTextTexture(GetText());
+
+    // Resize the canvas if necessary
+    ResizeCanvasToDisplaySize(WebGL.canvas)
+
+    if (MouseDown)
+    {
+        // Update rotation over time
+        Rotation[0] += 0.1 * ((MousePosition[1] - MouseOffset[1]) / (WebGL.canvas.clientHeight * 2) - Rotation[0]);
+        Rotation[1] += 0.1 * ((MousePosition[0] - MouseOffset[0]) / (WebGL.canvas.clientWidth * 2) - Rotation[1]);
+    }
+
+    else
+    {
+        // Decay rotation over time
+        Rotation[0] *= 0.95;
+        Rotation[1] *= 0.95;
+    }
+
+    // General matricies // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+    // Compute matrix for camera
+    let CameraMatrix = MatrixFunctions.Base();
+    CameraMatrix = MatrixFunctions.RotateX(CameraMatrix, -Rotation[0]);
+    CameraMatrix = MatrixFunctions.RotateY(CameraMatrix, -Rotation[1]);
+
+    // Compute the projection and view matricies
+    let ProjectionMatrix = MatrixFunctions.Perspective(0.5, WebGL.canvas.clientWidth / WebGL.canvas.clientHeight, 1, 20000);
+    let ViewMatrix = MatrixFunctions.Inverse(CameraMatrix);
+
+    // Compute view matrix for all objects by combining camera and perspective matricies
+    let ViewProjectionMatrix = MatrixFunctions.Multiply(ProjectionMatrix, ViewMatrix);
+
+    // Object specific matricies // // // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+    // Compute the world transformations for this object
+    let ModelMatrix = MatrixFunctions.Base();
+    ModelMatrix = MatrixFunctions.Translate(ModelMatrix, 0, 0, -1.25);
+    ModelMatrix = MatrixFunctions.RotateY(ModelMatrix, -1.571);
+    ModelMatrix = MatrixFunctions.Scale(ModelMatrix, 0.5, 0.5, 0.5);
+
+    // Compute full transformation matrix for this object
+    let ModelViewProjectionMatrix = MatrixFunctions.Multiply(ViewProjectionMatrix, ModelMatrix);
+
+    // Calculate normal matrix for this object
+    let NormalMatrix = MatrixFunctions.Base();
+    NormalMatrix = MatrixFunctions.RotateY(NormalMatrix, -1.571);
+
+    // Rendering // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // // //
+
+    // Clear the canvas
+    WebGL.clearColor(0.1, 0.1, 0.1, 1.0);
+    WebGL.clear(WebGL.COLOR_BUFFER_BIT | WebGL.DEPTH_BUFFER_BIT);
+
+    // Pass in all uniforms
+    WebGL.uniformMatrix4fv(ProgramInfo.UniformLocations.VertexTransformationMatrix, false, ModelViewProjectionMatrix);
+    WebGL.uniformMatrix4fv(ProgramInfo.UniformLocations.NormalTransformationMatrix, false, NormalMatrix);
+    WebGL.uniformMatrix4fv(ProgramInfo.UniformLocations.LightSpaceMatrix, false, LightSpaceMatrix);
+    WebGL.uniformMatrix4fv(ProgramInfo.UniformLocations.ModelMatrix, false, ModelMatrix);
+    WebGL.uniform1f(ProgramInfo.UniformLocations.Time, Time);
+
+    // Bind position buffer
+    WebGL.bindBuffer(WebGL.ARRAY_BUFFER, PositionBuffer);
+    WebGL.vertexAttribPointer(ProgramInfo.AttribLocations.VertexPosition, 3, WebGL.FLOAT, false, 0, 0);
+    WebGL.enableVertexAttribArray(ProgramInfo.AttribLocations.VertexPosition);
+
+    // Bind texture coord buffer
+    WebGL.bindBuffer(WebGL.ARRAY_BUFFER, TextureCoordBuffer);
+    WebGL.vertexAttribPointer(ProgramInfo.AttribLocations.TextureCoord, 2, WebGL.FLOAT, false, 0, 0);
+    WebGL.enableVertexAttribArray(ProgramInfo.AttribLocations.TextureCoord);
+
+    // Bind normal buffer
+    WebGL.bindBuffer(WebGL.ARRAY_BUFFER, NormalVectorBuffer);
+    WebGL.vertexAttribPointer(ProgramInfo.AttribLocations.NormalVector, 3, WebGL.FLOAT, false, 0, 0);
+    WebGL.enableVertexAttribArray(ProgramInfo.AttribLocations.NormalVector);
+
+    // Bind color buffer
+    WebGL.bindBuffer(WebGL.ARRAY_BUFFER, ColorBuffer);
+    WebGL.vertexAttribPointer(ProgramInfo.AttribLocations.SurfaceColor, 3, WebGL.FLOAT, false, 0, 0);
+    WebGL.enableVertexAttribArray(ProgramInfo.AttribLocations.SurfaceColor);
+
+    // Bind shadow map texture
+    WebGL.activeTexture(WebGL.TEXTURE0);
+    WebGL.bindTexture(WebGL.TEXTURE_2D, ShadowMap);
+    WebGL.uniform1i(ProgramInfo.UniformLocations.ShadowMap, 0);
+
+    // Bind text texture
+    WebGL.activeTexture(WebGL.TEXTURE1);
+    WebGL.bindTexture(WebGL.TEXTURE_2D, TextTexture);
+    WebGL.uniform1i(ProgramInfo.UniformLocations.TextTexture, 1);
+
+    // Draw the triangles
+    WebGL.drawArrays(WebGL.TRIANGLES, 0, TriangleCount);
+
+    // Schedule the next frame
+    if (State === "Retro") {frame = requestAnimationFrame(UpdateScene);}
+}
+
+
+ return {
+  start() {
+   if (State === 'Retro') return;
+   State = 'Retro'; LastTime = null;
+   ComputerBoot.volume = 0.5; ComputerAmbient.volume = 0.25;
+   if (booted) ComputerAmbient.play().catch(() => {});
+   Canvas.focus(); frame = requestAnimationFrame(UpdateScene);
+  },
+  stop() {
+   State = 'Modern'; cancelAnimationFrame(frame);
+   ComputerBoot.pause(); ComputerAmbient.pause();
+  },
+  destroy() {
+   this.stop(); listeners.abort();
+   ComputerBeep.pause(); KeyboardPressed.pause();
+   WebGL.getExtension('WEBGL_lose_context')?.loseContext();
+  }
+ };
+}

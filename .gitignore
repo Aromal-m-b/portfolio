@@ -4,3 +4,7 @@ portfolio-preview.png
 outputs/
 *.tar.gz
 .openai/
+node_modules/
+.env
+.env.*
+!.env.example
