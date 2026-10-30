@@ -1,0 +1,284 @@
+
+body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+}
+
+canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+#MainButton {
+    width: 7.5vh;
+    height: 7.5vh;
+
+    position: fixed;
+    left: 50vw;
+    top: 95vh;
+    translate: -50% -50%;
+
+    color: white;
+    font-size: 3vh;
+    text-align: center;
+    
+    background-color: black;
+    border: 1px solid rgb(100, 100, 100);
+    border-radius: 50%;
+    
+    transition: font-size 0.15s ease, transform 0.25s ease;
+    cursor: pointer;
+}
+
+#MainButton:hover {
+    font-size: 4vh;
+}
+
+#MainDiv {
+    width: 100vw;
+    height: 100vh;
+
+    position: fixed;
+    top: 0;
+    left: 0;
+    overflow: hidden;/* auto */
+
+    background-color: rgb(26, 26, 26);
+    transition: transform 0.5s ease-in-out;
+    transform: translateY(0%);
+}
+
+#MainDiv.hidden {
+    transform: translateY(100%);
+}
+
+#LeftPanel {
+    width: 50vh;
+    height: 100%;
+    left: calc(50vw - 50vh);
+    position: absolute;
+    margin-top: 10vh;
+    pointer-events: none;
+}
+
+#RightPanel {
+    width: 50vh;
+    height: 100%;
+    position: absolute;
+    padding: 10vh calc(50vw - 50vh) 0 50vw;
+
+    overflow-y: scroll;
+    overflow-x: hidden;
+    -ms-overflow-style: none;  /* Internet Explorer 10+ */
+    scrollbar-width: none;  /* Firefox */
+}
+
+#RightPanel::-webkit-scrollbar{
+    display: none; /* Safari and Chrome */
+}
+
+#MouseGlow {
+    width: 30vmax;
+    height: 30vmax;
+
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    translate: -50% -50%;
+
+    background-color: rgba(255, 167, 25, 0.25);
+    border-radius: 50%;
+}
+
+#MouseGlowBlur {
+    width: 100%;
+    height: 100%;
+
+    position: absolute;
+    backdrop-filter: blur(12vmax);
+}
+
+h1 {
+    font-size: 5.5vh;
+    margin: 0 0 1vh 0;
+    color: white;
+    font-weight: bold;
+    pointer-events: auto;
+}
+
+h2 {
+    font-size: 2vh;
+    margin: 0 0 1.5vh 0;
+    color: white;
+    font-weight: normal;
+    pointer-events: auto;
+}
+
+p {
+    font-size: 1.6vh;
+    margin: 0;
+    color: gray;
+    line-height: 2.5vh;
+    pointer-events: auto;
+}
+
+/*
+m {
+    font-weight: bold;
+    color: rgb(145, 145, 145);
+}
+*/
+
+.NavContainer {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-100%);
+}
+
+.NavItem {
+    display: flex;
+    align-items: center;
+    margin: 20px 0;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.NavItemDot {
+    width: 1.1vh;
+    height: 1.1vh;
+    border-radius: 50%;
+    background-color: gray;
+    transition: all 0.3s ease;
+}
+
+.NavItemText {
+    margin-left: 1.1vh;
+    font-size: 1.6vh;
+    color: gray;
+    transition: color 0.3s ease;
+}
+
+.NavItem.Active .NavItemDot {
+    background-color: white;
+    transform: scale(1.5);
+}
+
+.NavItem.Active .NavItemText {
+    color: white;
+}
+
+.Section {
+    margin-bottom: 10vh;
+}
+
+#SocialsContainer {
+    position: absolute;
+    top: 80vh;
+    transform: translateY(-100%);
+
+    display: flex;
+    justify-content: flex-start;
+    gap: 2.5vh;
+}
+
+#SocialsContainer a {
+    transform: scale(1);
+    filter: invert(100%) brightness(50%);
+    transition: all 0.1s ease;
+    pointer-events: auto;
+}
+
+#SocialsContainer a:hover {
+     transform: scale(1.1);
+     filter: invert(100%) brightness(100%);
+}
+
+.Project {
+    margin-bottom: 0.5vh;
+    padding: 0.75vh 0.75vh 0.75vh 0.75vh;
+    border-radius: 0.75vh;
+
+    display: flex;
+    justify-content: space-between;
+    text-decoration: none;
+}
+
+.Project:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.Project p {
+    user-select: none;
+    font-size: 1.4vh;
+    color: gray;
+}
+
+.Separator {
+    flex-grow: 1;
+    border-bottom: 1px solid gray;
+    margin: 0 0.75vh 0.75em 0.75vh;
+}
+/* Personal content, preserving the original charcoal / amber palette. */
+.NavItem { border: 0; padding: 0; background: transparent; font-family: inherit; }
+a:focus-visible, button:focus-visible { outline: 2px solid rgb(255, 167, 25); outline-offset: 5px; }
+#MouseGlow, #MouseGlowBlur { pointer-events: none; }
+h3 { color: white; font-size: 1.65vh; line-height: 1.5; font-weight: normal; margin: 0 0 1vh; }
+.Skills { margin-top: 3vh; }
+.SectionIntro { margin-bottom: 3vh; }
+.Project { flex-direction: column; gap: 1vh; padding: 1.75vh 1vh; margin: 0 -1vh 1vh; }
+.ProjectHeading { display: flex; justify-content: space-between; align-items: baseline; gap: 1vh; }
+.ProjectHeading h3 { margin: 0; white-space: nowrap; }
+.ProjectHeading h3 span { color: gray; }
+.ProjectType { text-align: right; color: gray; font-size: 1.25vh; line-height: 1.5; }
+.ProjectDescription { color: gray; font-size: 1.5vh; line-height: 2.4vh; }
+.ProjectStack { font-size: 1.25vh; line-height: 1.6; color: rgb(145,145,145); }
+.Experience { margin-bottom: 3.5vh; }
+.Date { font-size: 1.25vh; margin-bottom: 0.5vh; }
+.Organization { margin-bottom: 1vh; }
+.Achievements { padding-left: 1.4em; font-size: 1.45vh; line-height: 2.5vh; color: gray; }
+footer { padding-bottom: 25vh; }
+footer a { color: rgb(145,145,145); text-underline-offset: 4px; }
+.Credit { font-size: 1.2vh; margin-top: 3vh; line-height: 2vh; }
+@media (max-width: 760px) {
+ #MainDiv { overflow-y: auto; }
+ #LeftPanel { position: relative; width: auto; height: auto; left: auto; margin: 0; padding: 64px 26px 32px; }
+ #RightPanel { position: relative; width: auto; height: auto; padding: 0 26px; overflow: visible; }
+ h1 { font-size: 44px; }
+ h2 { font-size: 19px; margin-bottom: 18px; }
+ h3, .ProjectHeading h3 { font-size: 16px; }
+ p { font-size: 15px; line-height: 25px; }
+ .NavContainer { position: static; transform: none; display: flex; gap: 24px; margin: 24px 0; flex-wrap: wrap; }
+ .NavItem { margin: 0; }
+ .NavItemText { font-size: 14px; margin-left: 9px; }
+ .NavItemDot { width: 7px; height: 7px; }
+ #SocialsContainer { position: static; transform: none; gap: 24px; margin-bottom: 24px; }
+ .Section { margin-bottom: 58px; scroll-margin-top: 24px; }
+ .Skills { margin-top: 24px; }
+ .Project { padding: 18px 8px; gap: 10px; }
+ .ProjectHeading { align-items: flex-start; }
+ .ProjectType, .ProjectStack, .Date { font-size: 12px; }
+ .ProjectDescription { font-size: 14px; line-height: 23px; }
+ .Experience { margin-bottom: 28px; }
+ .Achievements { font-size: 14px; line-height: 25px; }
+ .Credit { font-size: 12px; line-height: 20px; margin-top: 24px; }
+ footer { padding-bottom: 120px; }
+ #MainButton { width: 52px; height: 52px; top: auto; bottom: 16px; translate: -50% 0; font-size: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+ *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+ #MouseGlow { display: none; }
+}
+@media (max-width: 760px) {
+ #MainDiv { display: flex; flex-direction: column; }
+ #LeftPanel { order: -1; flex-shrink: 0; }
+ #RightPanel { flex-shrink: 0; }
+ #MouseGlowBlur { top: 0; left: 0; }
+}
+@media (max-width: 760px) {
+ #LeftPanel, #RightPanel { z-index: 1; }
+ #MainDiv { scrollbar-width: none; }
+ #MainDiv::-webkit-scrollbar { display: none; }
+}

@@ -1,0 +1,6 @@
+dist/
+*.zip
+portfolio-preview.png
+outputs/
+*.tar.gz
+.openai/
