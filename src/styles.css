@@ -1338,3 +1338,8 @@ a {
     max-height: 550px;
   }
 }
+
+.contact-phone { display: flex; align-items: center; gap: 16px; width: fit-content; margin-top: 22px; color: #d0cbc0; font-size: 15px; text-decoration: none; padding: 5px 0; }
+.contact-phone > span:last-child { color: var(--amber); }
+.contact-phone:hover { color: var(--amber); }
+@media (max-width:700px) { .contact-phone { font-size: 14px; gap: 12px; } }

@@ -359,6 +359,9 @@ function Contact() {
       <a className="contact-email" href="mailto:aromalmb1227@gmail.com">
         aromalmb1227@gmail.com <span>↗</span>
       </a>
+      <a className="contact-phone" href="tel:+919645405518" aria-label="Call Aromal MB at +91 9645405518">
+        <span className="mono-label">PHONE</span> +91 9645405518 <span aria-hidden="true">↗</span>
+      </a>
       <div className="contact-bottom">
         <p>Chalakudy, Kerala, India</p>
         <div>
