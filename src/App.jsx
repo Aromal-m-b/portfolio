@@ -290,27 +290,57 @@ function Resume() {
           </div>
         </div>
       </div>
-      <div className="toolbox">
-        <p className="mono-label">THE TOOLBOX</p>
-        <div>
+      <section className="toolbox" aria-labelledby="toolbox-title">
+        <div className="toolbox-heading">
+          <div>
+            <p className="mono-label">THE TOOLBOX</p>
+            <h3 id="toolbox-title">
+              Skills I build with<span>.</span>
+            </h3>
+          </div>
+          <p>
+            From training models to shipping APIs.
+            <br />
+            The tools behind my projects.
+          </p>
+        </div>
+        <div className="toolbox-groups">
           {[
-            "Python",
-            "PyTorch",
-            "TensorFlow",
-            "Scikit-learn",
-            "LangChain",
-            "LangGraph",
-            "RAG",
-            "OpenCV",
-            "FastAPI",
-            "PostgreSQL",
-            "Docker",
-            "AWS",
-          ].map((skill) => (
-            <span key={skill}>{skill}</span>
+            {
+              title: "Machine learning",
+              mark: "01",
+              skills: ["Python", "Scikit-learn", "TensorFlow"],
+            },
+            {
+              title: "Computer vision",
+              mark: "02",
+              skills: ["PyTorch", "OpenCV"],
+            },
+            {
+              title: "LLMs & agents",
+              mark: "03",
+              skills: ["LangChain", "LangGraph", "RAG"],
+            },
+            {
+              title: "APIs & deployment",
+              mark: "04",
+              skills: ["FastAPI", "PostgreSQL", "Docker", "AWS"],
+            },
+          ].map((group) => (
+            <div className="toolbox-group" key={group.title}>
+              <p className="toolbox-area">
+                <span aria-hidden="true">{group.mark}</span>
+                {group.title}
+              </p>
+              <ul>
+                {group.skills.map((skill) => (
+                  <li key={skill}>{skill}</li>
+                ))}
+              </ul>
+            </div>
           ))}
         </div>
-      </div>
+      </section>
     </section>
   );
 }
